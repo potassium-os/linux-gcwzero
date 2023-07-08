@@ -64,6 +64,12 @@ config WM8350_POWER
           Say Y here to enable support for the power management unit
 	  provided by the Wolfson Microelectronics WM8350 PMIC.
 
+config PMU_ACT8600_SUPPORT
+	tristate "ACT8600 PMU support for Ingenic SoC"
+	depends on MACH_JZ4770
+	help
+	  Say Y here to enable ACT8600 for power supply class and drivers.
+
 config TEST_POWER
 	tristate "Test power driver"
 	help
@@ -245,6 +251,17 @@ config BATTERY_JZ4740
 
 	  This driver can be build as a module. If so, the module will be
 	  called jz4740-battery.
+
+config BATTERY_JZ4770
+	tristate "Ingenic JZ4770 battery"
+	depends on MACH_JZ4770
+	depends on MFD_JZ4770_ADC
+	help
+	  Say Y to enable support for the battery on Ingenic JZ4770 based
+	  boards.
+
+	  This driver can be built as a module. If so, the module will be
+	  called jz4770-battery.
 
 config BATTERY_INTEL_MID
 	tristate "Battery driver for Intel MID platforms"

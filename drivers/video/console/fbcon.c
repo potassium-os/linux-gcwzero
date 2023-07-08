@@ -114,6 +114,7 @@ static int fbcon_is_default = 1;
 static int fbcon_has_exited;
 static int primary_device = -1;
 static int fbcon_has_console_bind;
+static unsigned int bind_on_startup = 1;
 
 #ifdef CONFIG_FRAMEBUFFER_CONSOLE_DETECT_PRIMARY
 static int map_override;
@@ -442,28 +443,42 @@ static void fbcon_del_cursor_timer(struct fb_info *info)
 static int __init fb_console_setup(char *this_opt)
 {
 	char *options;
-	int i, j;
+	int i, j, ret;
 
 	if (!this_opt || !*this_opt)
 		return 1;
 
 	while ((options = strsep(&this_opt, ",")) != NULL) {
-		if (!strncmp(options, "font:", 5))
+		if (!strncmp(options, "font:", 5)) {
 			strlcpy(fontname, options + 5, sizeof(fontname));
+			continue;
+		}
 		
 		if (!strncmp(options, "scrollback:", 11)) {
+			char *k;
 			options += 11;
-			if (*options) {
-				fbcon_softback_size = simple_strtoul(options, &options, 0);
-				if (*options == 'k' || *options == 'K') {
-					fbcon_softback_size *= 1024;
-					options++;
-				}
-				if (*options != ',')
-					return 1;
-				options++;
-			} else
-				return 1;
+			k = options;
+
+			while (*k != '\0' && *k != 'k' && *k != 'K')
+				k++;
+
+			/* Clear the 'k' or 'K' suffix to
+			 * prevent errors with kstrtouint */
+			if (*k != '\0')
+				*k++ = '\0';
+			else
+				k = NULL;
+
+			ret = kstrtouint(options, 0, (unsigned int *)
+						&fbcon_softback_size);
+
+			if (!ret && k)
+				fbcon_softback_size *= 1024;
+
+			/* (k && *k): Check for garbage after the suffix */
+			if (ret || (k && *k))
+				printk(KERN_WARNING "fbcon: scrollback: incorrect value.\n");
+			continue;
 		}
 		
 		if (!strncmp(options, "map:", 4)) {
@@ -477,28 +492,61 @@ static int __init fb_console_setup(char *this_opt)
 				}
 
 				fbcon_map_override();
+			} else {
+				printk(KERN_WARNING "fbcon: map: incorrect value.\n");
 			}
-
-			return 1;
+			continue;
 		}
 
 		if (!strncmp(options, "vc:", 3)) {
+			char *dash;
 			options += 3;
-			if (*options)
-				first_fb_vc = simple_strtoul(options, &options, 10) - 1;
-			if (first_fb_vc < 0)
-				first_fb_vc = 0;
-			if (*options++ == '-')
-				last_fb_vc = simple_strtoul(options, &options, 10) - 1;
-			fbcon_is_default = 0; 
-		}	
+
+			dash = strchr(options, '-');
+			if (dash)
+				*dash++ = '\0';
+
+			ret = kstrtouint(options, 10,
+						(unsigned int *) &first_fb_vc);
+			if (!ret) {
+				if (--first_fb_vc < 0)
+					first_fb_vc = 0;
+
+				if (dash) {
+					ret = kstrtouint(dash, 10,
+								(unsigned int *)
+								&last_fb_vc);
+					if (!ret)
+						last_fb_vc--;
+				}
+			}
+
+			if (!ret)
+				fbcon_is_default = 0;
+			else
+				printk(KERN_WARNING "fbcon: vc: incorrect value.\n");
+			continue;
+		}
 
 		if (!strncmp(options, "rotate:", 7)) {
 			options += 7;
-			if (*options)
-				initial_rotation = simple_strtoul(options, &options, 0);
-			if (initial_rotation > 3)
-				initial_rotation = 0;
+			ret = kstrtouint(options, 0, (unsigned int *)
+						&initial_rotation);
+			if (!ret) {
+				if (initial_rotation > 3)
+					initial_rotation = 0;
+			} else {
+				printk(KERN_WARNING "fbcon: rotate: incorrect value.\n");
+			}
+			continue;
+		}
+
+		if (!strncmp(options, "bind:", 5)) {
+			options += 5;
+			ret = kstrtouint(options, 0, &bind_on_startup);
+			if (ret)
+				printk(KERN_WARNING "fbcon: bind: incorrect value.\n");
+			continue;
 		}
 	}
 	return 1;
@@ -542,15 +590,18 @@ static int do_fbcon_takeover(int show_logo)
 	for (i = first_fb_vc; i <= last_fb_vc; i++)
 		con2fb_map[i] = info_idx;
 
-	err = do_take_over_console(&fb_con, first_fb_vc, last_fb_vc,
-				fbcon_is_default);
+	if (bind_on_startup)
+		err = do_take_over_console(&fb_con, first_fb_vc, last_fb_vc,
+					   fbcon_is_default);
+	else
+		err = do_register_con_driver(&fb_con, first_fb_vc, last_fb_vc);
 
 	if (err) {
 		for (i = first_fb_vc; i <= last_fb_vc; i++)
 			con2fb_map[i] = -1;
 		info_idx = -1;
 	} else {
-		fbcon_has_console_bind = 1;
+		fbcon_has_console_bind = bind_on_startup;
 	}
 
 	return err;
@@ -3339,8 +3390,8 @@ static ssize_t store_rotate(struct device *device,
 			    size_t count)
 {
 	struct fb_info *info;
-	int rotate, idx;
-	char **last = NULL;
+	int idx;
+	unsigned int rotate;
 
 	if (fbcon_has_exited)
 		return count;
@@ -3352,7 +3403,8 @@ static ssize_t store_rotate(struct device *device,
 		goto err;
 
 	info = registered_fb[idx];
-	rotate = simple_strtoul(buf, last, 0);
+	if (kstrtouint(buf, 0, &rotate))
+		goto err;
 	fbcon_rotate(info, rotate);
 err:
 	console_unlock();
@@ -3364,8 +3416,8 @@ static ssize_t store_rotate_all(struct device *device,
 				size_t count)
 {
 	struct fb_info *info;
-	int rotate, idx;
-	char **last = NULL;
+	int idx;
+	unsigned int rotate;
 
 	if (fbcon_has_exited)
 		return count;
@@ -3377,7 +3429,8 @@ static ssize_t store_rotate_all(struct device *device,
 		goto err;
 
 	info = registered_fb[idx];
-	rotate = simple_strtoul(buf, last, 0);
+	if (kstrtouint(buf, 0, &rotate))
+		goto err;
 	fbcon_rotate_all(info, rotate);
 err:
 	console_unlock();
@@ -3439,8 +3492,8 @@ static ssize_t store_cursor_blink(struct device *device,
 				  const char *buf, size_t count)
 {
 	struct fb_info *info;
-	int blink, idx;
-	char **last = NULL;
+	int idx;
+	unsigned int blink;
 
 	if (fbcon_has_exited)
 		return count;
@@ -3456,7 +3509,8 @@ static ssize_t store_cursor_blink(struct device *device,
 	if (!info->fbcon_par)
 		goto err;
 
-	blink = simple_strtoul(buf, last, 0);
+	if (kstrtouint(buf, 0, &blink))
+		goto err;
 
 	if (blink) {
 		fbcon_cursor_noblink = 0;

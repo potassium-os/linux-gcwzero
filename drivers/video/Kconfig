@@ -23,6 +23,8 @@ source "drivers/gpu/drm/Kconfig"
 
 source "drivers/gpu/host1x/Kconfig"
 
+source "drivers/gpu/vivante/Kconfig"
+
 config VGASTATE
        tristate
        default n
@@ -2419,6 +2421,15 @@ config FB_JZ4740
 	help
 	  Framebuffer support for the JZ4740 SoC.
 
+config FB_JZ4770
+	tristate "JZ4770 LCD framebuffer support"
+	depends on FB && MACH_JZ4770
+	select FB_SYS_FILLRECT
+	select FB_SYS_COPYAREA
+	select FB_SYS_IMAGEBLIT
+	help
+	  Framebuffer support for the JZ4770 SoC.
+
 config FB_MXS
 	tristate "MXS LCD framebuffer support"
 	depends on FB && ARCH_MXS
@@ -2471,6 +2482,7 @@ source "drivers/video/omap2/Kconfig"
 source "drivers/video/exynos/Kconfig"
 source "drivers/video/mmp/Kconfig"
 source "drivers/video/backlight/Kconfig"
+source "drivers/video/displays/Kconfig"
 
 if VT
 	source "drivers/video/console/Kconfig"

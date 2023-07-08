@@ -19,6 +19,7 @@ obj-$(CONFIG_JOYSTICK_GUILLEMOT)	+= guillemot.o
 obj-$(CONFIG_JOYSTICK_IFORCE)		+= iforce/
 obj-$(CONFIG_JOYSTICK_INTERACT)		+= interact.o
 obj-$(CONFIG_JOYSTICK_JOYDUMP)		+= joydump.o
+obj-$(CONFIG_JOYSTICK_JZ_SADC)		+= jz-sadc.o
 obj-$(CONFIG_JOYSTICK_MAGELLAN)		+= magellan.o
 obj-$(CONFIG_JOYSTICK_MAPLE)		+= maplecontrol.o
 obj-$(CONFIG_JOYSTICK_SIDEWINDER)	+= sidewinder.o
@@ -32,4 +33,5 @@ obj-$(CONFIG_JOYSTICK_WARRIOR)		+= warrior.o
 obj-$(CONFIG_JOYSTICK_XPAD)		+= xpad.o
 obj-$(CONFIG_JOYSTICK_ZHENHUA)		+= zhenhua.o
 obj-$(CONFIG_JOYSTICK_WALKERA0701)	+= walkera0701.o
+obj-$(CONFIG_JOYSTICK_MXC6225)		+= mxc6225.o
 

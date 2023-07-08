@@ -14,6 +14,7 @@
 #include <linux/module.h>
 #include <linux/sched.h>
 #include <linux/syscalls.h>
+#include <linux/highmem.h>
 #include <linux/mm.h>
 
 #include <asm/cacheflush.h>
@@ -58,6 +59,8 @@ void (*_dma_cache_wback)(unsigned long start, unsigned long size);
 void (*_dma_cache_inv)(unsigned long start, unsigned long size);
 
 EXPORT_SYMBOL(_dma_cache_wback_inv);
+EXPORT_SYMBOL(_dma_cache_wback);
+EXPORT_SYMBOL(_dma_cache_inv);
 
 #endif /* CONFIG_DMA_NONCOHERENT */
 
@@ -78,14 +81,45 @@ SYSCALL_DEFINE3(cacheflush, unsigned long, addr, unsigned long, bytes,
 	return 0;
 }
 
-void __flush_dcache_page(struct page *page)
+void __flush_kernel_dcache_page(struct vm_area_struct *vma, struct page *page)
 {
 	struct address_space *mapping = page_mapping(page);
+	void *addr;
+	int exec = (vma->vm_flags & VM_EXEC) && !cpu_has_ic_fills_f_dc;
+
+	if (!exec)
+		return;
+
+	if (PageHighMem(page)) {
+		addr = kmap_atomic(page);
+		if (addr) {
+			flush_data_cache_page((unsigned long)addr);
+			kunmap_atomic(addr);
+		}
+		return;
+	}
+
+	if (mapping && !mapping_mapped(mapping)) {
+		SetPageDcacheDirty(page);
+		return;
+	}
+
+	/*
+	 * We could delay the flush for the !page_mapping case too.  But that
+	 * case is for exec env/arg pages and those are %99 certainly going to
+	 * get faulted into the tlb (and thus flushed) anyways.
+	 */
+	addr = page_address(page);
+	flush_data_cache_page((unsigned long)addr);
+}
+
+void __flush_dcache_page(struct page *page)
+{
 	unsigned long addr;
 
 	if (PageHighMem(page))
 		return;
-	if (mapping && !mapping_mapped(mapping)) {
+	if (page_mapping(page) && !page_mapped(page)) {
 		SetPageDcacheDirty(page);
 		return;
 	}
@@ -97,6 +131,7 @@ void __flush_dcache_page(struct page *page)
 	 */
 	addr = (unsigned long) page_address(page);
 	flush_data_cache_page(addr);
+	ClearPageDcacheDirty(page);
 }
 
 EXPORT_SYMBOL(__flush_dcache_page);
@@ -112,8 +147,10 @@ void __flush_anon_page(struct page *page, unsigned long vmaddr)
 			kaddr = kmap_coherent(page, vmaddr);
 			flush_data_cache_page((unsigned long)kaddr);
 			kunmap_coherent();
-		} else
+		} else {
 			flush_data_cache_page(addr);
+			ClearPageDcacheDirty(page);
+		}
 	}
 }
 
@@ -130,11 +167,14 @@ void __update_cache(struct vm_area_struct *vma, unsigned long address,
 	if (unlikely(!pfn_valid(pfn)))
 		return;
 	page = pfn_to_page(pfn);
-	if (page_mapping(page) && Page_dcache_dirty(page)) {
+	if (page_mapped(page) && Page_dcache_dirty(page)) {
 		addr = (unsigned long) page_address(page);
-		if (exec || pages_do_alias(addr, address & PAGE_MASK))
+		if (exec || (cpu_has_dc_aliases &&
+		    pages_do_alias(addr, address & PAGE_MASK))) {
 			flush_data_cache_page(addr);
-		ClearPageDcacheDirty(page);
+			if (cpu_has_dc_aliases)
+				ClearPageDcacheDirty(page);
+		}
 	}
 }
 

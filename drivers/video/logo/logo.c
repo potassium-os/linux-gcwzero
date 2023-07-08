@@ -46,7 +46,7 @@ const struct linux_logo * __init_refok fb_find_logo(int depth)
 		logo = &logo_superh_mono;
 #endif
 	}
-	
+
 	if (depth >= 4) {
 #ifdef CONFIG_LOGO_LINUX_VGA16
 		/* Generic Linux logo */
@@ -61,7 +61,7 @@ const struct linux_logo * __init_refok fb_find_logo(int depth)
 		logo = &logo_superh_vga16;
 #endif
 	}
-	
+
 	if (depth >= 8) {
 #ifdef CONFIG_LOGO_LINUX_CLUT224
 		/* Generic Linux logo */
@@ -99,6 +99,22 @@ const struct linux_logo * __init_refok fb_find_logo(int depth)
 #ifdef CONFIG_LOGO_M32R_CLUT224
 		/* M32R Linux logo */
 		logo = &logo_m32r_clut224;
+#endif
+#ifdef CONFIG_LOGO_GCWZERO_CLUT224
+		/* GCW-Zero / OpenDingux logo */
+		logo = &logo_gcwzero_clut224;
+#endif
+#ifdef CONFIG_LOGO_PG2_CLUT224
+		/* PG2 / OpenDingux logo */
+		logo = &logo_pg2_clut224;
+#endif
+#ifdef CONFIG_LOGO_RG350_CLUT224
+		/* RG350 / OpenDingux logo */
+		logo = &logo_rg350_clut224;
+#endif
+#ifdef CONFIG_LOGO_RG350_NOOD_CLUT224
+		/* RG350 / OpenDingux logo */
+		logo = &logo_rg350_nood_clut224;
 #endif
 	}
 	return logo;

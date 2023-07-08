@@ -539,6 +539,8 @@ static void r4k_flush_cache_page(struct vm_area_struct *vma,
 	args.pfn = pfn;
 
 	r4k_on_each_cpu(local_r4k_flush_cache_page, &args);
+	if (cpu_has_dc_aliases)
+		ClearPageDcacheDirty(pfn_to_page(pfn));
 }
 
 static inline void local_r4k_flush_data_cache_page(void * addr)
@@ -552,6 +554,21 @@ static void r4k_flush_data_cache_page(unsigned long addr)
 		local_r4k_flush_data_cache_page((void *)addr);
 	else
 		r4k_on_each_cpu(local_r4k_flush_data_cache_page, (void *) addr);
+}
+
+void (*flush_insn_cache_page)(unsigned long addr);
+
+static inline void local_r4k_flush_insn_cache_page(void * addr)
+{
+	r4k_blast_icache_page((unsigned long) addr);
+}
+
+static void r4k_flush_insn_cache_page(unsigned long addr)
+{
+	if (in_atomic())
+		local_r4k_flush_insn_cache_page((void *)addr);
+	else
+		r4k_on_each_cpu(local_r4k_flush_insn_cache_page, (void *) addr);
 }
 
 struct flush_icache_range_args {
@@ -701,6 +718,7 @@ static void local_r4k_flush_cache_sigtramp(void * arg)
 #endif
 			"cache	%0,($at)\n\t"
 			"nop; nop; nop\n"
+			".set mips0\n\t"
 			"1:\n\t"
 			".set pop"
 			:
@@ -780,6 +798,7 @@ static inline void rm7k_erratum31(void)
 			"cache\t%1, 0x1000(%0)\n\t"
 			"cache\t%1, 0x2000(%0)\n\t"
 			"cache\t%1, 0x3000(%0)\n\t"
+			".set mips0\n\t"
 			".set pop\n"
 			:
 			: "r" (addr), "i" (Index_Store_Tag_I), "i" (Fill));
@@ -989,6 +1008,35 @@ static void probe_pcache(void)
 		c->dcache.waybit = 0;
 		break;
 
+	case CPU_JZRISC:
+		config1 = read_c0_config1();
+		config1 = (config1 >> 22) & 0x07;
+		if (config1 == 0x07)
+			config1 = 10;
+		else
+			config1 = config1 + 11;
+		config1 += 2;
+		icache_size = (1 << config1);
+		c->icache.linesz = 32;
+		c->icache.ways = 4;
+		c->icache.waybit = __ffs(icache_size / c->icache.ways);
+
+		config1 = read_c0_config1();
+		config1 = (config1 >> 13) & 0x07;
+		if (config1 == 0x07)
+			config1 = 10;
+		else
+			config1 = config1 + 11;
+		config1 += 2;
+		dcache_size = (1 << config1);
+		c->dcache.linesz = 32;
+		c->dcache.ways = 4;
+		c->dcache.waybit = __ffs(dcache_size / c->dcache.ways);
+
+		c->dcache.flags = 0;
+		c->options |= MIPS_CPU_PREFETCH;
+
+		break;
 	default:
 		if (!(config & MIPS_CONF_M))
 			panic("Don't know how to probe P-caches on this cpu.");
@@ -1264,6 +1312,7 @@ static void setup_scache(void)
 		loongson2_sc_init();
 		return;
 #endif
+	case CPU_JZRISC:
 	case CPU_XLP:
 		/* don't need to worry about L2, fully coherent */
 		return;
@@ -1464,6 +1513,7 @@ void r4k_cache_init(void)
 	flush_data_cache_page	= r4k_flush_data_cache_page;
 	flush_icache_range	= r4k_flush_icache_range;
 	local_flush_icache_range	= local_r4k_flush_icache_range;
+	flush_insn_cache_page	= r4k_flush_insn_cache_page;
 
 #if defined(CONFIG_DMA_NONCOHERENT)
 	if (coherentio) {
